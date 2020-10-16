@@ -19,8 +19,8 @@
 
 // Define structure of methods so they can be called before implementation
 int open_listenfd(int port);
-void echo(int connfd);
 void *thread(void *vargp);
+void print_request(int connfd);
 
 int main(int argc, char **argv)
 {
@@ -56,25 +56,20 @@ void *thread(void *vargp)
     // Makes it so that when this specific thread exits system can free the used resources without waiting
     pthread_detach(pthread_self());
     free(vargp);
-    echo(connfd);
+    print_request(connfd);
     close(connfd);
     return NULL;
 }
 
-/*
- * echo - read and echo text lines until client closes connection
+/**
+ * Print the request from a socket
  */
-void echo(int connfd)
+void print_request(int connfd)
 {
     size_t n;
     char buf[MAXLINE];
-    char httpmsg[] = "HTTP/1.1 200 Document Follows\r\nContent-Type:text/html\r\nContent-Length:32\r\n\r\n<html><h1>Hello CSCI4273 Course!</h1>";
-
     n = read(connfd, buf, MAXLINE);
     printf("server received the following request:\n%s\n", buf);
-    strcpy(buf, httpmsg);
-    printf("server returning a http message with the following content.\n%s\n", buf);
-    write(connfd, buf, strlen(httpmsg));
 }
 
 /*
