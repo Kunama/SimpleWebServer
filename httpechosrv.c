@@ -17,6 +17,7 @@
 #define MAXBUF 8192  /* max I/O buffer size */
 #define LISTENQ 1024 /* second argument to listen() */
 
+// Define structure of methods so they can be called before implementation
 int open_listenfd(int port);
 void echo(int connfd);
 void *thread(void *vargp);
@@ -27,6 +28,7 @@ int main(int argc, char **argv)
     struct sockaddr_in clientaddr;
     pthread_t tid;
 
+    // There should be an arg detailing port number. ie: ./out [PORT]
     if (argc != 2)
     {
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
@@ -34,10 +36,14 @@ int main(int argc, char **argv)
     }
     port = atoi(argv[1]);
 
+    // Opens new port on which program listens to
     listenfd = open_listenfd(port);
     while (1)
     {
         connfdp = malloc(sizeof(int));
+        // Accepts client connection - Gets first connection on listenfd socket and creates a new dedicated socket for client.
+        // If no connections then block until one comes
+        // https://www.ibm.com/support/knowledgecenter/SSLTBW_2.3.0/com.ibm.zos.v2r3.bpxbd00/accept.htm
         *connfdp = accept(listenfd, (struct sockaddr *)&clientaddr, &clientlen);
         pthread_create(&tid, NULL, thread, connfdp);
     }
@@ -47,6 +53,7 @@ int main(int argc, char **argv)
 void *thread(void *vargp)
 {
     int connfd = *((int *)vargp);
+    // Makes it so that when this specific thread exits system can free the used resources without waiting
     pthread_detach(pthread_self());
     free(vargp);
     echo(connfd);
@@ -70,9 +77,9 @@ void echo(int connfd)
     write(connfd, buf, strlen(httpmsg));
 }
 
-/* 
+/*
  * open_listenfd - open and return a listening socket on port
- * Returns -1 in case of failure 
+ * Returns -1 in case of failure
  */
 int open_listenfd(int port)
 {
