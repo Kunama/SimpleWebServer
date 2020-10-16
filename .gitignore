@@ -1,0 +1,7 @@
+# Ignore compiled files by ignoring all and then unignoring files with extensions and directories
+*
+!*.*
+!*/
+
+# Ignore debugging files
+*.dSYM/*
