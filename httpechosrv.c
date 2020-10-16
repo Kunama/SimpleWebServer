@@ -156,8 +156,8 @@ void parse_request(request *req)
 void handle_get_request(request *req)
 {
     // Get file
-    if(!strcmp(req->path, "/")){
-        strcpy(req->path, "/index.html");
+    if(req->path[strlen(req->path)-1] == '/'){
+        strcat(req->path, "index.html");
     }
     int path_length = strlen(req->path)+6;
     char* file_path = malloc(path_length);
