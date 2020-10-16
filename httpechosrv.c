@@ -17,10 +17,22 @@
 #define MAXBUF 8192  /* max I/O buffer size */
 #define LISTENQ 1024 /* second argument to listen() */
 
+// Struct for holding all request info
+typedef struct Request
+{
+    int connfd;
+    int request_type;
+    char path[MAXLINE];
+    char http_version[9];
+    char connection[15];
+} request;
+
 // Define structure of methods so they can be called before implementation
 int open_listenfd(int port);
 void *thread(void *vargp);
-void print_request(int connfd);
+void parse_request(request *req);
+void handle_get_request(request *req);
+void send500(request* req);
 
 int main(int argc, char **argv)
 {
@@ -56,22 +68,169 @@ void *thread(void *vargp)
     // Makes it so that when this specific thread exits system can free the used resources without waiting
     pthread_detach(pthread_self());
     free(vargp);
-    print_request(connfd);
+    request *req = malloc(sizeof(request));
+    memset(req->path,0,sizeof(req->path));
+    memset(req->http_version,0,sizeof(req->http_version));
+    memset(req->connection,0,sizeof(req->connection));
+    req->connfd = connfd;
+    parse_request(req);
+    if (req->request_type == 1)
+    {
+        handle_get_request(req);
+    }
+    free(req);
     close(connfd);
     return NULL;
 }
 
 /**
- * Print the request from a socket
+ * Parses the request from a socket and returns 0 if GET and 1 if POST
  */
-void print_request(int connfd)
+void parse_request(request *req)
 {
-    size_t n;
-    char buf[MAXLINE];
-    n = read(connfd, buf, MAXLINE);
-    printf("server received the following request:\n%s\n", buf);
+    char request[MAXBUF];
+    memset(request,0,sizeof(request));
+    read(req->connfd, request, MAXLINE);
+    printf("Server received the following request:\n%s\n", request);
+
+    char *current = &request;
+    // Parse request type
+    if (strncmp(request, "GET", 3) == 0)
+    {
+        req->request_type = 1;
+        current = current + 4;
+    }
+    else if (strncmp(request, "POST", 4) == 0)
+    {
+        req->request_type = 2;
+        current = current + 5;
+    }
+    else
+    {
+        send500(req);
+    }
+
+    // Parse path
+    // https://www.geeksforgeeks.org/how-to-append-a-character-to-a-string-in-c/
+    char *current_char[2];
+    current_char[0] = *current;
+    current_char[1] = '\0';
+    while (current_char[0] != ' ' && current_char[0] != '\0')
+    {
+        strcat(req->path, current_char);
+        current++;
+        current_char[0] = *current;
+    }
+
+    current++;
+    current_char[0] = *current;
+
+    // Parse HTTP version
+    while (current_char[0] != '\r' && current_char[0] != '\0')
+    {
+        strcat(req->http_version, current_char);
+        current++;
+        current_char[0] = *current;
+    }
+    if (strcmp(req->http_version, "HTTP/1.1") != 0 && strcmp(req->http_version, "HTTP/1.0") != 0)
+    {
+        send500(req);
+    }
+
+    // Parse connection
+    current = strstr(request, "Connection:");
+    if (current == NULL)
+    {
+        send500(req);
+    }
+    current_char[0] = *current;
+    while (current_char[0] != '\r' && current_char[0] != '\0')
+    {
+        strcat(req->connection, current_char);
+        current++;
+        current_char[0] = *current;
+    }
 }
 
+// Send to client for GET requests
+void handle_get_request(request *req)
+{
+    // Get file
+    if(!strcmp(req->path, "/")){
+        strcpy(req->path, "/index.html");
+    }
+    int path_length = strlen(req->path)+6;
+    char* file_path = malloc(path_length);
+    memset(file_path,0,path_length);
+    strcat(file_path, "./www");
+    strcat(file_path, req->path);
+    // printf("%s\n", file_path);
+    FILE* requested_file = fopen(file_path, "r");
+    if(!requested_file){
+        send500(req);
+    }
+
+    // Get file type
+    char content_type[23];
+    memset(content_type,0,sizeof(content_type));
+    char* extension = strrchr(file_path, '.') + 1;
+    free(file_path);
+    if(!strcasecmp(extension, "html")){
+        strcpy(content_type, "text/html");
+    } else if(!strcasecmp(extension, "txt")){
+        strcpy(content_type, "text/plain");
+    } else if(!strcasecmp(extension, "png")){
+        strcpy(content_type, "image/png");
+    } else if(!strcasecmp(extension, "gif")){
+        strcpy(content_type, "image/gif");
+    } else if(!strcasecmp(extension, "jpg")){
+        // In the writeup it said to use jpg, but Safari was downloading the file instead of displaying it so using the supported jpeg instead
+        strcpy(content_type, "image/jpeg");
+    } else if(!strcasecmp(extension, "css")){
+        strcpy(content_type, "text/css");
+    } else if(!strcasecmp(extension, "js")){
+        strcpy(content_type, "application/javascript");
+    }
+
+    // Get content-length
+    fseek(requested_file, 0, SEEK_END);
+    int content_length = ftell(requested_file);
+    fseek(requested_file, 0, SEEK_SET);
+
+    // Send header:
+    // https://stackoverflow.com/questions/4881937/building-strings-from-variables-in-c
+    char send_buffer[MAXLINE];
+    memset(send_buffer,0,sizeof(send_buffer));
+    snprintf(send_buffer, sizeof(send_buffer), "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%d\r\n\r\n", req->http_version, content_type, content_length);
+    printf("Returning header:\n%s\n", send_buffer);
+    write(req->connfd, send_buffer, strlen(send_buffer));
+
+    int n;
+    memset(send_buffer,0,sizeof(send_buffer));
+    while ((n = fread(send_buffer, 1, sizeof(send_buffer)-1, requested_file)) > 0) {
+        printf("HELLO %d\n", n);
+        write(req->connfd, send_buffer, n);
+        memset(send_buffer,0,sizeof(send_buffer));
+    }
+
+    fclose(requested_file);
+}
+
+void send500(request* req)
+{
+    printf("Server failed for this request\n");
+
+    char httpmsg[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type:text/html\r\nContent-Length:132\r\n\r\n";
+    char httpfile[] = "<html><h1>These messages in the exact format as shown above should be sent back to the client if any of the above error occurs.</h1>";
+    char buf[MAXLINE];
+    strcpy(buf, httpmsg);
+    write(req->connfd, buf, strlen(httpmsg));
+    strcpy(buf, httpfile);
+    write(req->connfd, buf, strlen(httpfile));
+    free(req);
+    close(req->connfd);
+    pthread_exit(pthread_self());
+}
 /*
  * open_listenfd - open and return a listening socket on port
  * Returns -1 in case of failure
