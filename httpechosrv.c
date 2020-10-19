@@ -25,6 +25,7 @@ typedef struct Request
     char path[MAXLINE];
     char http_version[9];
     char connection[15];
+    char post_data[MAXLINE];
 } request;
 
 // Define structure of methods so they can be called before implementation
@@ -32,6 +33,7 @@ int open_listenfd(int port);
 void *thread(void *vargp);
 void parse_request(request *req);
 void handle_get_request(request *req);
+void handle_post_request(request *req);
 void send500(request* req);
 
 int main(int argc, char **argv)
@@ -77,6 +79,10 @@ void *thread(void *vargp)
     if (req->request_type == 1)
     {
         handle_get_request(req);
+    } else if(req->request_type == 2){
+        handle_post_request(req);
+    } else{
+        send500(req);
     }
     free(req);
     close(connfd);
@@ -138,11 +144,12 @@ void parse_request(request *req)
     }
 
     // Parse connection
-    current = strstr(request, "Connection:");
+    current = strstr(request, "Connection: ");
     if (current == NULL)
     {
         send500(req);
     }
+    current = current + 12;
     current_char[0] = *current;
     while (current_char[0] != '\r' && current_char[0] != '\0')
     {
@@ -150,11 +157,26 @@ void parse_request(request *req)
         current++;
         current_char[0] = *current;
     }
+
+    // Parse POST DATA
+    if(req->request_type == 2){
+        current = strstr(request, "\r\n\r\n");
+        if (current == NULL)
+        {
+            send500(req);
+        }
+        current = current + 4;
+        current_char[0] = *current;
+        while (current_char[0] != '\r' && current_char[0] != '\0')
+        {
+            strcat(req->post_data, current_char);
+            current++;
+            current_char[0] = *current;
+        }
+    }
 }
 
-// Send to client for GET requests
-void handle_get_request(request *req)
-{
+char* get_file_path(request *req){
     // Get file
     if(req->path[strlen(req->path)-1] == '/'){
         strcat(req->path, "index.html");
@@ -164,15 +186,10 @@ void handle_get_request(request *req)
     memset(file_path,0,path_length);
     strcat(file_path, "./www");
     strcat(file_path, req->path);
-    // printf("%s\n", file_path);
-    FILE* requested_file = fopen(file_path, "r");
-    if(!requested_file){
-        send500(req);
-    }
+    return file_path;
+}
 
-    // Get file type
-    char content_type[23];
-    memset(content_type,0,sizeof(content_type));
+void get_content_type(char* file_path, char* content_type){
     char* extension = strrchr(file_path, '.') + 1;
     free(file_path);
     if(!strcasecmp(extension, "html")){
@@ -191,6 +208,20 @@ void handle_get_request(request *req)
     } else if(!strcasecmp(extension, "js")){
         strcpy(content_type, "application/javascript");
     }
+}
+
+// Send to client for GET requests
+void handle_get_request(request *req)
+{
+    char* file_path = get_file_path(req);
+    FILE* requested_file = fopen(file_path, "r");
+    if(!requested_file){
+        send500(req);
+    }
+
+    // Get file type
+    char content_type[23];
+    get_content_type(file_path, content_type);
 
     // Get content-length
     fseek(requested_file, 0, SEEK_END);
@@ -208,7 +239,46 @@ void handle_get_request(request *req)
     int n;
     memset(send_buffer,0,sizeof(send_buffer));
     while ((n = fread(send_buffer, 1, sizeof(send_buffer)-1, requested_file)) > 0) {
-        printf("HELLO %d\n", n);
+        write(req->connfd, send_buffer, n);
+        memset(send_buffer,0,sizeof(send_buffer));
+    }
+
+    fclose(requested_file);
+}
+
+void handle_post_request(request *req){
+    char* file_path = get_file_path(req);
+    FILE* requested_file = fopen(file_path, "r");
+    if(!requested_file){
+        send500(req);
+    }
+
+    // Get file type
+    char content_type[23];
+    get_content_type(file_path, content_type);
+    if(strcmp(content_type, "text/html") != 0){
+        send500(req);
+    }
+
+    // Get content-length
+    fseek(requested_file, 0, SEEK_END);
+    int content_length = ftell(requested_file);
+    fseek(requested_file, 0, SEEK_SET);
+
+    // Add post data length
+    content_length = content_length + strlen(req->post_data) + 20; // +20 for the <pre> and <h1> tags
+
+    // Send header:
+    // https://stackoverflow.com/questions/4881937/building-strings-from-variables-in-c
+    char send_buffer[MAXLINE];
+    memset(send_buffer,0,sizeof(send_buffer));
+    snprintf(send_buffer, sizeof(send_buffer), "%s 200 OK\r\nContent-Type:%s\r\nContent-Length:%d\r\n\r\n<pre><h1>%s</h1></pre>", req->http_version, content_type, content_length, req->post_data);
+    printf("Returning header:\n%s\n", send_buffer);
+    write(req->connfd, send_buffer, strlen(send_buffer));
+
+    int n;
+    memset(send_buffer,0,sizeof(send_buffer));
+    while ((n = fread(send_buffer, 1, sizeof(send_buffer)-1, requested_file)) > 0) {
         write(req->connfd, send_buffer, n);
         memset(send_buffer,0,sizeof(send_buffer));
     }

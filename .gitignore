@@ -1,7 +1,10 @@
-# Ignore compiled files by ignoring all and then unignoring files with extensions and directories
+# # Ignore compiled files by ignoring all and then unignoring files with extensions and directories
 *
 !*.*
 !*/
 
 # Ignore debugging files
 *.dSYM/*
+
+# Ignore the react app
+www/calculator/*
