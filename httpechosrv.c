@@ -34,7 +34,11 @@ void *thread(void *vargp);
 void parse_request(request *req);
 void handle_get_request(request *req);
 void handle_post_request(request *req);
-void send500(request* req);
+// https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
+void send500(request* req); // Internal Server error
+void send400(request* req); // Bad Request error
+void send404(request* req); // File not found error
+
 
 int main(int argc, char **argv)
 {
@@ -113,7 +117,7 @@ void parse_request(request *req)
     }
     else
     {
-        send500(req);
+        send400(req);
     }
 
     // Parse path
@@ -140,14 +144,14 @@ void parse_request(request *req)
     }
     if (strcmp(req->http_version, "HTTP/1.1") != 0 && strcmp(req->http_version, "HTTP/1.0") != 0)
     {
-        send500(req);
+        send400(req);
     }
 
     // Parse connection
     current = strstr(request, "Connection: ");
     if (current == NULL)
     {
-        send500(req);
+        send400(req);
     }
     current = current + 12;
     current_char[0] = *current;
@@ -163,7 +167,7 @@ void parse_request(request *req)
         current = strstr(request, "\r\n\r\n");
         if (current == NULL)
         {
-            send500(req);
+            send400(req);
         }
         current = current + 4;
         current_char[0] = *current;
@@ -216,7 +220,7 @@ void handle_get_request(request *req)
     char* file_path = get_file_path(req);
     FILE* requested_file = fopen(file_path, "r");
     if(!requested_file){
-        send500(req);
+        send404(req);
     }
 
     // Get file type
@@ -250,14 +254,15 @@ void handle_post_request(request *req){
     char* file_path = get_file_path(req);
     FILE* requested_file = fopen(file_path, "r");
     if(!requested_file){
-        send500(req);
+        send404(req);
     }
 
     // Get file type
     char content_type[23];
     get_content_type(file_path, content_type);
     if(strcmp(content_type, "text/html") != 0){
-        send500(req);
+        // POST only returns for html as said in write up.
+        send400(req);
     }
 
     // Get content-length
@@ -292,6 +297,38 @@ void send500(request* req)
 
     char httpmsg[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type:text/html\r\nContent-Length:132\r\n\r\n";
     char httpfile[] = "<html><h1>These messages in the exact format as shown above should be sent back to the client if any of the above error occurs.</h1>";
+    char buf[MAXLINE];
+    strcpy(buf, httpmsg);
+    write(req->connfd, buf, strlen(httpmsg));
+    strcpy(buf, httpfile);
+    write(req->connfd, buf, strlen(httpfile));
+    free(req);
+    close(req->connfd);
+    pthread_exit(pthread_self());
+}
+
+void send400(request* req)
+{
+    printf("Server received invalid request\n");
+
+    char httpmsg[] = "HTTP/1.1 400 Bad Request\r\nContent-Type:text/html\r\nContent-Length:44\r\n\r\n";
+    char httpfile[] = "<html><h1>The request sent was invalid.</h1>";
+    char buf[MAXLINE];
+    strcpy(buf, httpmsg);
+    write(req->connfd, buf, strlen(httpmsg));
+    strcpy(buf, httpfile);
+    write(req->connfd, buf, strlen(httpfile));
+    free(req);
+    close(req->connfd);
+    pthread_exit(pthread_self());
+}
+
+void send404(request* req)
+{
+    printf("Client requested resource that is not found\n");
+
+    char httpmsg[] = "HTTP/1.1 404 File Not Found\r\nContent-Type:text/html\r\nContent-Length:150\r\n\r\n";
+    char httpfile[] = "<html><h1>The requested file could not be found. Please try again with a different file. If it is a directory, make sure it has a trailing slash!</h1>";
     char buf[MAXLINE];
     strcpy(buf, httpmsg);
     write(req->connfd, buf, strlen(httpmsg));
