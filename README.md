@@ -24,7 +24,11 @@ This will compile all the files into an executable called `webserver` which take
 
 ## Tests
 
-To test some of the functionality there are a few NodeJS scripts. They all assume that the command was executed in the main submission directory and the server is running already.
+To test some of the functionality there are a few NodeJS scripts. They all assume that the command was executed in the main submission directory and the server is running already. NodeJS should be installed and the node modules should be installed through
+
+```
+npm i
+```
 
 ### Multiple GET Requests test
 
