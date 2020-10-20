@@ -12,7 +12,7 @@
  */
 void send500(request *req)
 {
-    printf("Server failed for this request\n");
+    printf("500: Server failed for this request\n");
 
     char httpmsg[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type:text/html\r\nContent-Length:132\r\n\r\n";
     char httpfile[] = "<html><h1>These messages in the exact format as shown above should be sent back to the client if any of the above error occurs.</h1>";
@@ -31,7 +31,7 @@ void send500(request *req)
  */
 void send400(request *req)
 {
-    printf("Server received invalid request\n");
+    printf("400: Server received invalid request\n");
 
     char httpmsg[] = "HTTP/1.1 400 Bad Request\r\nContent-Type:text/html\r\nContent-Length:44\r\n\r\n";
     char httpfile[] = "<html><h1>The request sent was invalid.</h1>";
@@ -50,7 +50,7 @@ void send400(request *req)
  */
 void send404(request *req)
 {
-    printf("Client requested resource that is not found\n");
+    printf("404: Client requested resource that is not found\n");
 
     char httpmsg[] = "HTTP/1.1 404 File Not Found\r\nContent-Type:text/html\r\nContent-Length:150\r\n\r\n";
     char httpfile[] = "<html><h1>The requested file could not be found. Please try again with a different file. If it is a directory, make sure it has a trailing slash!</h1>";

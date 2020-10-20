@@ -8,3 +8,6 @@
 
 # Ignore the react app
 www/calculator/*
+
+# Ignore node modules for tests
+node_modules
