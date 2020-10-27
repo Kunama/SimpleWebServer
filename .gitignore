@@ -3,6 +3,9 @@
 !*.*
 !*/
 
+# Un-ignore Makefile
+!Makefile
+
 # Ignore debugging files
 *.dSYM/*
 
